@@ -4,12 +4,13 @@ import aqario.gravegoods.common.GraveGoods;
 import aqario.gravegoods.common.config.GraveGoodsConfig;
 import aqario.gravegoods.common.entity.GraveEntity;
 import aqario.gravegoods.common.integration.TrinketsIntegration;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.level.GameRules;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.gamerules.GameRules;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -22,7 +23,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class PlayerEntityMixin extends LivingEntity {
     @Shadow
     @Final
-    private Inventory inventory;
+    Inventory inventory;
 
     @Shadow
     protected abstract void destroyVanishingCursedItems();
@@ -36,7 +37,7 @@ public abstract class PlayerEntityMixin extends LivingEntity {
         if(!GraveGoodsConfig.enableGraves) {
             return;
         }
-        if(!this.level().getGameRules().getBoolean(GameRules.RULE_KEEPINVENTORY)) {
+        if(this.level() instanceof ServerLevel level && !level.getGameRules().get(GameRules.KEEP_INVENTORY)) {
             this.destroyVanishingCursedItems();
             if(!this.inventory.isEmpty()
                 || this.hasTrinkets()

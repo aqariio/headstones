@@ -4,43 +4,45 @@ import aqario.gravegoods.common.GraveGoods;
 import aqario.gravegoods.common.config.GraveGoodsConfig;
 import aqario.gravegoods.common.integration.TrinketsIntegration;
 import aqario.gravegoods.common.screen.GraveScreenHandler;
+import com.mojang.logging.LogUtils;
+import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import net.minecraft.core.BlockPos;
-import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.ListTag;
-import net.minecraft.nbt.Tag;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.world.*;
-import net.minecraft.world.entity.Entity;
-import net.minecraft.world.entity.EntityType;
-import net.minecraft.world.entity.MoverType;
+import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.entity.*;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.storage.ValueInput;
+import net.minecraft.world.level.storage.ValueOutput;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.slf4j.Logger;
 
+import java.util.List;
 import java.util.Optional;
-import java.util.UUID;
 
 public class GraveEntity extends Entity implements ContainerListener, MenuProvider {
-    public static final EntityDataAccessor<Optional<UUID>> OWNER = SynchedEntityData.defineId(GraveEntity.class, EntityDataSerializers.OPTIONAL_UUID);
-    public static final EntityDataAccessor<CompoundTag> INVENTORY = SynchedEntityData.defineId(GraveEntity.class, EntityDataSerializers.COMPOUND_TAG);
+    private static final Logger LOGGER = LogUtils.getLogger();
+    public static final EntityDataAccessor<Optional<EntityReference<LivingEntity>>> OWNER = SynchedEntityData.defineId(GraveEntity.class, EntityDataSerializers.OPTIONAL_LIVING_ENTITY_REFERENCE);
     public final float uniqueOffset;
-    public final SimpleContainer items;
+    public final SimpleContainer items = new SimpleContainer(54);
+    public final float bobOffs = this.random.nextFloat() * (float) Math.PI * 2.0F;
 
     public GraveEntity(EntityType<?> type, Level world) {
         super(type, world);
         this.uniqueOffset = this.random.nextFloat() * (float) Math.PI * 2.0F;
-        this.items = new SimpleContainer(54);
         this.items.addListener(this);
     }
 
@@ -48,11 +50,17 @@ public class GraveEntity extends Entity implements ContainerListener, MenuProvid
         GraveEntity grave = new GraveEntity(GraveGoodsEntityType.GRAVE, player.level());
         grave.setPosRaw(player.getX(), player.getY(), player.getZ());
         grave.setCustomName(player.getName());
-        grave.entityData.set(OWNER, Optional.of(player.getUUID()));
+        grave.setOwner(player);
 
-        ListTag list = new ListTag();
-        player.getInventory().save(list);
-        grave.items.fromTag(list);
+        List<ItemStack> items = new ObjectArrayList<>();
+        items.addAll(player.getInventory().items);
+        items.addAll(player.equipment.items.values().stream().toList().reversed());
+
+        grave.items.clearContent();
+        for(ItemStack item : items) {
+            grave.items.addItem(item);
+        }
+
         if(GraveGoods.isTrinketsLoaded()) {
             TrinketsIntegration.putTrinketsInGrave(player, grave);
         }
@@ -70,17 +78,18 @@ public class GraveEntity extends Entity implements ContainerListener, MenuProvid
     @NotNull
     @Override
     public InteractionResult interact(Player player, InteractionHand hand) {
-        if(!GraveGoodsConfig.openOtherGraves && !player.getUUID().equals(this.getOwnerUuid())) {
+        if(!GraveGoodsConfig.openOtherGraves
+            && this.getOwnerReference() != null
+            && !(player.level() instanceof ServerLevel level
+            && player.equals(this.getOwnerReference().getEntity(level, LivingEntity.class)))) {
             return super.interact(player, hand);
         }
         if(!player.level().isClientSide()
-            && player.getItemInHand(hand).isEmpty()
             && player instanceof ServerPlayer serverPlayer
         ) {
             serverPlayer.openMenu(this);
-            return InteractionResult.CONSUME;
         }
-        return super.interact(player, hand);
+        return InteractionResult.CONSUME;
     }
 
     @Nullable
@@ -134,11 +143,11 @@ public class GraveEntity extends Entity implements ContainerListener, MenuProvid
             }
         }
 
-        this.hasImpulse |= this.updateInWaterStateAndDoFluidPushing();
+        this.needsSync |= this.updateInWaterStateAndDoFluidPushing();
         if(!this.level().isClientSide()) {
             double d = this.getDeltaMovement().subtract(vec3d).lengthSqr();
             if(d > 0.01) {
-                this.hasImpulse = true;
+                this.needsSync = true;
             }
         }
     }
@@ -155,17 +164,21 @@ public class GraveEntity extends Entity implements ContainerListener, MenuProvid
 
     @Override
     public void playerTouch(Player player) {
-        if(!this.level().isClientSide()) {
+        if(this.level() instanceof ServerLevel level) {
             if(!this.getBoundingBox().intersects(player.getBoundingBox())) {
                 return;
             }
 
-            if(player.getUUID().equals(this.entityData.get(OWNER).orElse(null))) {
+            if(this.getOwnerReference() != null
+                && player.equals(this.getOwnerReference().getEntity(level, LivingEntity.class))
+            ) {
                 if(this.items != null) {
                     for(int i = 0; i < this.items.getContainerSize(); ++i) {
-                        ItemStack itemStack = this.items.getItem(i);
-                        if(itemStack.isEmpty()) continue;
-                        this.spawnAtLocation(itemStack);
+                        ItemStack stack = this.items.getItem(i);
+                        if(stack.isEmpty()) {
+                            continue;
+                        }
+                        this.spawnAtLocation(level, stack);
                     }
                 }
                 this.discard();
@@ -173,19 +186,24 @@ public class GraveEntity extends Entity implements ContainerListener, MenuProvid
         }
     }
 
+    @Override
+    public boolean hurtServer(ServerLevel serverLevel, DamageSource damageSource, float f) {
+        return false;
+    }
+
     @Nullable
     @Override
-    public ItemEntity spawnAtLocation(ItemStack stack, float yOffset) {
+    public ItemEntity spawnAtLocation(ServerLevel level, ItemStack stack) {
         if(stack.isEmpty()) {
             return null;
         }
         if(this.level().isClientSide()) {
             return null;
         }
-        ItemEntity itemEntity = new ItemEntity(this.level(), this.getX(), this.getY() + (double) yOffset, this.getZ(), stack);
-        itemEntity.setNoPickUpDelay();
-        this.level().addFreshEntity(itemEntity);
-        return itemEntity;
+        ItemEntity entity = new ItemEntity(this.level(), this.getX(), this.getY(), this.getZ(), stack);
+        entity.setNoPickUpDelay();
+        this.level().addFreshEntity(entity);
+        return entity;
     }
 
     @Override
@@ -200,56 +218,47 @@ public class GraveEntity extends Entity implements ContainerListener, MenuProvid
 
     @Override
     public boolean isCurrentlyGlowing() {
-        return GraveGoodsConfig.highlightGraves && this.level().isClientSide() && this.getOwnerUuid() != null || super.isCurrentlyGlowing();
+        return GraveGoodsConfig.highlightGraves && this.level().isClientSide() && this.getOwnerReference() != null || super.isCurrentlyGlowing();
     }
 
     @Nullable
-    public UUID getOwnerUuid() {
+    public EntityReference<LivingEntity> getOwnerReference() {
         return this.entityData.get(OWNER).orElse(null);
     }
 
-    public void setOwnerUuid(@Nullable UUID uuid) {
-        this.entityData.set(OWNER, Optional.ofNullable(uuid));
+    public void setOwner(@Nullable LivingEntity entity) {
+        this.entityData.set(OWNER, Optional.ofNullable(entity).map(EntityReference::of));
+    }
+
+    public void setOwnerReference(@Nullable EntityReference<LivingEntity> reference) {
+        this.entityData.set(OWNER, Optional.ofNullable(reference));
     }
 
     @Override
-    protected void defineSynchedData() {
-        this.entityData.define(OWNER, Optional.empty());
-        this.entityData.define(INVENTORY, new CompoundTag());
+    protected void defineSynchedData(SynchedEntityData.Builder builder) {
+        builder.define(OWNER, Optional.empty());
     }
 
     @Override
-    protected void addAdditionalSaveData(CompoundTag nbt) {
-        if(this.getOwnerUuid() != null) {
-            nbt.putUUID("Owner", this.getOwnerUuid());
-        }
-        ListTag nbtList = new ListTag();
-
-        for(int i = 0; i < this.items.getContainerSize(); ++i) {
-            ItemStack itemStack = this.items.getItem(i);
-            if(!itemStack.isEmpty()) {
-                CompoundTag nbtCompound = new CompoundTag();
-                nbtCompound.putByte("Slot", (byte) i);
-                itemStack.save(nbtCompound);
-                nbtList.add(nbtCompound);
-            }
-        }
-
-        nbt.put("Items", nbtList);
+    protected void addAdditionalSaveData(ValueOutput output) {
+        EntityReference<LivingEntity> entityReference = this.getOwnerReference();
+        EntityReference.store(entityReference, output, "owner");
+        this.writeInventoryToTag(output);
     }
 
     @Override
-    protected void readAdditionalSaveData(CompoundTag nbt) {
-        this.setOwnerUuid(nbt.getUUID("Owner"));
-        ListTag nbtList = nbt.getList("Items", Tag.TAG_COMPOUND);
+    protected void readAdditionalSaveData(ValueInput input) {
+        EntityReference<LivingEntity> entityReference = EntityReference.readWithOldOwnerConversion(input, "owner", this.level());
+        this.setOwnerReference(entityReference);
+        this.readInventoryFromTag(input);
+    }
 
-        for(int i = 0; i < nbtList.size(); ++i) {
-            CompoundTag nbtCompound = nbtList.getCompound(i);
-            int j = nbtCompound.getByte("Slot") & 255;
-            if(j < this.items.getContainerSize()) {
-                this.items.setItem(j, ItemStack.of(nbtCompound));
-            }
-        }
+    private void readInventoryFromTag(ValueInput valueInput) {
+        valueInput.list("items", ItemStack.CODEC).ifPresent(this.items::fromItemList);
+    }
+
+    private void writeInventoryToTag(ValueOutput valueOutput) {
+        this.items.storeAsItemList(valueOutput.list("items", ItemStack.CODEC));
     }
 
     public float getRotation(float tickDelta) {

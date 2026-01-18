@@ -18,7 +18,10 @@ public class ServerPlayerEntityMixin {
     @ModifyArg(method = "openMenu", at = @At(value = "INVOKE", target = "Lnet/minecraft/server/network/ServerGamePacketListenerImpl;send(Lnet/minecraft/network/protocol/Packet;)V"), index = 0)
     private Packet<?> gravegoods$changeGraveMenuName(Packet<?> packet, @Local AbstractContainerMenu screenHandler, @Local(argsOnly = true) @Nullable MenuProvider factory) {
         if(factory instanceof GraveEntity grave) {
-            return new ClientboundOpenScreenPacket(screenHandler.containerId, screenHandler.getType(), Component.translatable("container.gravegoods.grave", grave.getCustomName()));
+            Component containerTitle = grave.getCustomName() == null
+                ? Component.translatable("container.gravegoods.grave_unknown")
+                : Component.translatable("container.gravegoods.grave", grave.getCustomName());
+            return new ClientboundOpenScreenPacket(screenHandler.containerId, screenHandler.getType(), containerTitle);
         }
         return packet;
     }

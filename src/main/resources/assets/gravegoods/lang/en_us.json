@@ -2,6 +2,7 @@
   "mod.gravegoods.name": "Grave Goods",
   "entity.gravegoods.grave": "Grave",
   "container.gravegoods.grave": "%s's remains",
+  "container.gravegoods.grave_unknown": "Someone's remains",
   "gravegoods.midnightconfig.title": "Grave Goods Config",
   "gravegoods.midnightconfig.enableGraves": "Enable Graves",
   "gravegoods.midnightconfig.highlightGraves": "Highlight Graves",

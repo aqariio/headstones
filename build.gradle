@@ -1,11 +1,18 @@
 plugins {
-    id 'fabric-loom' version "${loom_version}"
+    id 'net.fabricmc.fabric-loom-remap' version "${loom_version}"
     id 'maven-publish'
 }
 
-archivesBaseName = project.archives_base_name
 version = "${project.version}+${project.minecraft_version}"
 group = project.maven_group
+
+base {
+    archivesName = project.mod_id
+}
+
+loom {
+    accessWidenerPath = file("src/main/resources/${project.mod_id}.classtweaker")
+}
 
 repositories {
     maven {
@@ -28,9 +35,9 @@ dependencies {
 
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
-    modCompileOnly "dev.emi:trinkets:${project.trinkets_version}"
-    modImplementation "dev.onyxstudios.cardinal-components-api:cardinal-components-base:5.0.0"
-    modImplementation ("com.terraformersmc:modmenu:${project.modmenu_version}") {
+    modCompileOnly "maven.modrinth:trinkets-canary:${project.trinkets_version}"
+    modImplementation "dev.onyxstudios.cardinal-components-api:cardinal-components-base:${project.cca_version}"
+    modImplementation("com.terraformersmc:modmenu:${project.modmenu_version}") {
         transitive = false
     }
     modImplementation include("maven.modrinth:midnightlib:${project.midnightlib_version}")
@@ -45,36 +52,31 @@ processResources {
 }
 
 tasks.withType(JavaCompile).configureEach {
-    it.options.encoding = 'UTF-8'
-    // Minecraft 1.18 (1.18-pre2) upwards uses Java 17.
-    it.options.release = 17
+    it.options.release = 21
 }
 
 java {
-    // Still required by IDEs such as Eclipse and Visual Studio Code
-    sourceCompatibility = JavaVersion.VERSION_17
-    targetCompatibility = JavaVersion.VERSION_17
-
-    // Loom will automatically attach sourcesJar to a RemapSourcesJar task and to the "build" task if it is present.
+    // Loom will automatically attach sourcesJar to a RemapSourcesJar task and to the "build" task
+    // if it is present.
     // If you remove this line, sources will not be generated.
     withSourcesJar()
 
-    // If this mod is going to be a library, then it should also generate Javadocs in order to aid with development.
-    // Uncomment this line to generate them.
-    // withJavadocJar()
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
 }
 
 // If you plan to use a different file for the license, don't forget to change the file name here!
 jar {
-    from('LICENSE.md') {
-        rename { "${it}_${archivesBaseName}" }
+    from("LICENSE.md") {
+        rename { "${it}_${project.base.archivesName.get()}" }
     }
 }
 
 // Configure the maven publication
 publishing {
     publications {
-        mavenJava(MavenPublication) {
+        create("mavenJava", MavenPublication) {
+            artifactId = project.base.archivesName.get()
             from components.java
         }
     }
