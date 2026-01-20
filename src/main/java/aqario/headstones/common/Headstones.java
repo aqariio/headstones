@@ -2,6 +2,7 @@ package aqario.headstones.common;
 
 import aqario.headstones.common.config.HeadstonesConfig;
 import aqario.headstones.common.entity.HeadstonesEntityTypes;
+import aqario.headstones.common.network.HeadstonesEntityDataSerializers;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.resources.Identifier;
@@ -24,6 +25,7 @@ public class Headstones implements ModInitializer {
     public void onInitialize() {
         LOGGER.info("Loading Headstones");
         HeadstonesConfig.init(ID, HeadstonesConfig.class);
+        HeadstonesEntityDataSerializers.init();
         HeadstonesEntityTypes.init();
     }
 }

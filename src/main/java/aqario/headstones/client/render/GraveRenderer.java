@@ -12,7 +12,7 @@ import net.minecraft.client.renderer.state.CameraRenderState;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.resources.Identifier;
 import net.minecraft.util.Mth;
-import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.EntityReference;
 import net.minecraft.world.entity.item.ItemEntity;
 import org.jetbrains.annotations.NotNull;
 
@@ -49,8 +49,8 @@ public class GraveRenderer extends EntityRenderer<GraveEntity, GraveRenderState>
         poseStack.scale(0.75F, 0.75F, 0.75F);
         float bob = Mth.sin(state.ageInTicks / 10.0F + state.bobOffset) * 0.1F + 0.1F;
         poseStack.translate(0.0F, bob + 0.25F, 0.0F);
-        float h = ItemEntity.getSpin(state.ageInTicks, state.bobOffset);
-        poseStack.mulPose(Axis.YP.rotation(h));
+        float spin = ItemEntity.getSpin(state.ageInTicks, state.bobOffset);
+        poseStack.mulPose(Axis.YP.rotation(spin));
         poseStack.mulPose(Axis.XP.rotationDegrees(180.0F));
         submitNodeCollector.submitModel(
             this.model,
@@ -89,9 +89,8 @@ public class GraveRenderer extends EntityRenderer<GraveEntity, GraveRenderState>
     public void extractRenderState(GraveEntity grave, GraveRenderState state, float f) {
         super.extractRenderState(grave, state, f);
         state.owner = (LocalPlayer) Optional.ofNullable(grave.getOwnerReference())
-            .map(reference -> reference.getEntity(grave.level(), LivingEntity.class))
-            .filter(e -> e instanceof LocalPlayer)
+            .map(reference -> EntityReference.getPlayer(reference, grave.level()))
             .orElse(null);
-        state.bobOffset = grave.bobOffs;
+        state.bobOffset = grave.bobOffset;
     }
 }

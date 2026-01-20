@@ -3,11 +3,11 @@ package aqario.headstones.common.entity;
 import aqario.headstones.common.Headstones;
 import aqario.headstones.common.config.HeadstonesConfig;
 import aqario.headstones.common.integration.TrinketsIntegration;
+import aqario.headstones.common.network.HeadstonesEntityDataSerializers;
 import aqario.headstones.common.screen.GraveScreenHandler;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.syncher.EntityDataAccessor;
-import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -15,7 +15,10 @@ import net.minecraft.sounds.SoundSource;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.world.*;
 import net.minecraft.world.damagesource.DamageSource;
-import net.minecraft.world.entity.*;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityReference;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.MoverType;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
@@ -32,10 +35,13 @@ import java.util.List;
 import java.util.Optional;
 
 public class GraveEntity extends Entity implements ContainerListener, MenuProvider {
-    public static final EntityDataAccessor<Optional<EntityReference<LivingEntity>>> OWNER = SynchedEntityData.defineId(GraveEntity.class, EntityDataSerializers.OPTIONAL_LIVING_ENTITY_REFERENCE);
+    public static final EntityDataAccessor<Optional<EntityReference<Player>>> OWNER = SynchedEntityData.defineId(
+        GraveEntity.class,
+        HeadstonesEntityDataSerializers.OPTIONAL_PLAYER_REFERENCE
+    );
     public final float uniqueOffset;
     public final SimpleContainer items = new SimpleContainer(54);
-    public final float bobOffs = this.random.nextFloat() * (float) Math.PI * 2.0F;
+    public final float bobOffset = this.random.nextFloat() * (float) Math.PI * 2.0F;
 
     public GraveEntity(EntityType<?> type, Level world) {
         super(type, world);
@@ -77,7 +83,7 @@ public class GraveEntity extends Entity implements ContainerListener, MenuProvid
         if(!HeadstonesConfig.openOtherGraves
             && this.getOwnerReference() != null
             && !(player.level() instanceof ServerLevel level
-            && player.equals(this.getOwnerReference().getEntity(level, LivingEntity.class)))) {
+            && player.equals(EntityReference.getPlayer(this.getOwnerReference(), level)))) {
             return super.interact(player, hand);
         }
         if(!player.level().isClientSide()
@@ -166,7 +172,7 @@ public class GraveEntity extends Entity implements ContainerListener, MenuProvid
             }
 
             if(this.getOwnerReference() != null
-                && player.equals(this.getOwnerReference().getEntity(level, LivingEntity.class))
+                && player.equals(EntityReference.getPlayer(this.getOwnerReference(), level))
             ) {
                 if(this.items != null) {
                     for(int i = 0; i < this.items.getContainerSize(); ++i) {
@@ -218,15 +224,15 @@ public class GraveEntity extends Entity implements ContainerListener, MenuProvid
     }
 
     @Nullable
-    public EntityReference<LivingEntity> getOwnerReference() {
+    public EntityReference<Player> getOwnerReference() {
         return this.entityData.get(OWNER).orElse(null);
     }
 
-    public void setOwner(@Nullable LivingEntity entity) {
+    public void setOwner(@Nullable Player entity) {
         this.entityData.set(OWNER, Optional.ofNullable(entity).map(EntityReference::of));
     }
 
-    public void setOwnerReference(@Nullable EntityReference<LivingEntity> reference) {
+    public void setOwnerReference(@Nullable EntityReference<Player> reference) {
         this.entityData.set(OWNER, Optional.ofNullable(reference));
     }
 
@@ -237,14 +243,14 @@ public class GraveEntity extends Entity implements ContainerListener, MenuProvid
 
     @Override
     protected void addAdditionalSaveData(ValueOutput output) {
-        EntityReference<LivingEntity> entityReference = this.getOwnerReference();
+        EntityReference<Player> entityReference = this.getOwnerReference();
         EntityReference.store(entityReference, output, "owner");
         this.writeInventoryToTag(output);
     }
 
     @Override
     protected void readAdditionalSaveData(ValueInput input) {
-        EntityReference<LivingEntity> entityReference = EntityReference.readWithOldOwnerConversion(input, "owner", this.level());
+        EntityReference<Player> entityReference = EntityReference.readWithOldOwnerConversion(input, "owner", this.level());
         this.setOwnerReference(entityReference);
         this.readInventoryFromTag(input);
     }
