@@ -4,7 +4,8 @@ import aqario.headstones.client.model.GraveModel;
 import aqario.headstones.common.entity.GraveEntity;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
-import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.PlayerInfo;
 import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.client.renderer.entity.EntityRenderer;
 import net.minecraft.client.renderer.entity.EntityRendererProvider;
@@ -17,6 +18,8 @@ import net.minecraft.world.entity.item.ItemEntity;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
 
 public class GraveRenderer extends EntityRenderer<GraveEntity, GraveRenderState> {
     private static final Identifier DEFAULT_TEXTURE = Identifier.withDefaultNamespace("textures/entity/skeleton/skeleton.png");
@@ -72,7 +75,7 @@ public class GraveRenderer extends EntityRenderer<GraveEntity, GraveRenderState>
 
     @NotNull
     public Identifier getTextureLocation(GraveRenderState state) {
-        LocalPlayer player = state.owner;
+        PlayerInfo player = state.owner;
         if(player != null) {
             return player.getSkin().body().texturePath();
         }
@@ -87,7 +90,11 @@ public class GraveRenderer extends EntityRenderer<GraveEntity, GraveRenderState>
     @Override
     public void extractRenderState(GraveEntity grave, GraveRenderState state, float tickDelta) {
         super.extractRenderState(grave, state, tickDelta);
-        state.owner = (LocalPlayer) EntityReference.getPlayer(grave.getOwnerReference(), grave.level());
+        Optional<UUID> uuid = Optional.ofNullable(grave.getOwnerReference())
+            .map(EntityReference::getUUID);
+        state.owner = Optional.ofNullable(Minecraft.getInstance().getConnection())
+            .flatMap(connection -> uuid.map(connection::getPlayerInfo))
+            .orElse(null);
         state.bobOffset = grave.bobOffset;
     }
 }
